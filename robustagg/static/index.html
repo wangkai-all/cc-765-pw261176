@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>稳健汇总分析 · 单位统计摘要</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <h1>稳健汇总分析</h1>
+      <span class="sub">单位统计摘要 · 截尾汇总 vs. 加权平均</span>
+    </div>
+    <div class="top-actions">
+      <label class="control" style="min-width:auto">
+        <span class="small muted">数据集</span>
+        <select id="dataset-select" aria-label="选择数据集"></select>
+      </label>
+      <label class="control" style="min-width:auto">
+        <span class="small muted">指标分量</span>
+        <select id="metric-select" aria-label="选择指标分量"></select>
+      </label>
+      <button id="btn-load-demo" class="primary">载入虚构样例</button>
+      <button id="btn-intake">录入摘要</button>
+      <button id="btn-inject">注入损坏摘要</button>
+      <button id="btn-simulate">运行验证模拟</button>
+      <button id="btn-theme" class="quiet" title="切换明暗">◐</button>
+    </div>
+  </header>
+
+  <div id="app-error" class="notice bad" hidden></div>
+
+  <main id="main" class="stack" aria-live="polite">
+    <section class="grid grid-2">
+      <div class="card">
+        <div class="card-head">
+          <h2>汇总中心</h2>
+          <span id="chosen-label" class="chip info"></span>
+          <span id="bound-chip" class="chip"></span>
+        </div>
+        <div class="hero">
+          <div class="num" id="hero-center">—</div>
+          <div class="hero-meta">
+            <span class="line" id="hero-sub">等待数据</span>
+            <span class="line" id="hero-truth"></span>
+          </div>
+        </div>
+        <div class="facts" id="hero-facts"></div>
+        <div id="hero-note" class="card-foot"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>可信假设与误差范围</h2>
+          <span class="hint" id="bound-status-hint"></span>
+        </div>
+        <ul class="assumptions" id="assumptions"></ul>
+        <div class="rationale" id="rationale"></div>
+      </div>
+    </section>
+
+    <section class="grid grid-2">
+      <div class="card">
+        <div class="card-head">
+          <h2>估计量对比</h2>
+          <span class="hint">同一批摘要，不同权重规则</span>
+          <div class="chart-tools">
+            <button data-toggle-table="est-table" aria-pressed="false">表格</button>
+          </div>
+        </div>
+        <figure class="chart" id="est-chart"></figure>
+        <div class="legend" id="est-legend"></div>
+        <div class="table-view" id="est-table" hidden></div>
+        <div class="card-foot" id="est-foot"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>单位权重分布</h2>
+          <span class="hint">封顶后每单位实际权重</span>
+          <div class="chart-tools">
+            <button data-toggle-table="weight-table" aria-pressed="false">表格</button>
+          </div>
+        </div>
+        <figure class="chart" id="weight-chart"></figure>
+        <div class="legend" id="weight-legend"></div>
+        <div class="table-view" id="weight-table" hidden></div>
+        <div class="card-foot"><span id="weight-more"></span><br>点任一柱查看该单位影响；斜纹柱表示权重已被上限截断。</div>
+      </div>
+    </section>
+
+    <section class="grid grid-2">
+      <div class="card">
+        <div class="card-head">
+          <h2>两个估计的差异</h2>
+          <span class="hint">加权平均 − 截尾汇总</span>
+        </div>
+        <div id="compare-body" class="stack"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>影响检查</h2>
+          <span class="hint" id="influence-hint">在左侧点选单位</span>
+        </div>
+        <div id="influence-body" class="stack"><p class="empty">尚未选择单位。</p></div>
+      </div>
+    </section>
+
+    <section class="card" id="curve-card">
+      <div class="card-head">
+        <h2>单位取值与截尾线</h2>
+        <span class="hint">每个点是一个单位，按封顶权重累积</span>
+        <div class="chart-tools">
+          <button data-toggle-table="curve-table" aria-pressed="false">表格</button>
+        </div>
+      </div>
+      <figure class="chart" id="curve-chart"></figure>
+      <div class="legend" id="curve-legend"></div>
+      <div class="table-view" id="curve-table" hidden></div>
+      <div class="card-foot">截尾线随 α 改变；落在两条线外的单位在截尾估计中权重被削减，而不是被标记为坏数据。</div>
+    </section>
+
+    <section class="grid grid-2">
+      <div class="card">
+        <div class="card-head">
+          <h2>批次与追溯</h2>
+          <span class="hint">所有结果都可回到实际参与批次</span>
+        </div>
+        <ul class="batch-list" id="batch-list"></ul>
+        <div class="card-foot">批次内包含已更正和被替换的报文；它们保留在库中，但不参与估计。</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>隔离记录</h2>
+          <span class="hint">保留原因与前后影响</span>
+        </div>
+        <div id="isolation-list" class="stack"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>验证模拟</h2>
+        <span class="hint">真值已知 · 单位异质 · 协同偏移 · 虚增数量</span>
+        <div class="chart-tools">
+          <span class="small muted" id="sim-status"></span>
+          <button id="btn-run-sim">运行</button>
+        </div>
+      </div>
+      <div id="sim-body"><p class="empty">尚未运行。默认跑 100 次随机种子，先看收益，再看误伤。</p></div>
+    </section>
+  </main>
+</div>
+
+<div class="tooltip" id="tooltip" role="status" aria-live="polite"></div>
+<div class="toast" id="toast" role="status"></div>
+
+<dialog id="intake-dialog">
+  <form method="dialog" id="intake-form" novalidate>
+    <div class="dialog-head">
+      <h2>录入聚合摘要</h2>
+      <span class="spacer"></span>
+      <button type="button" class="quiet" data-close>关闭</button>
+    </div>
+    <div class="dialog-body stack">
+      <div class="notice">
+        服务端只接收<strong>聚合摘要</strong>：均值、标准差、有效数量、取值范围。
+        任何逐记录字段（records / rows / samples / values 等）都会被整体拒绝并返回 422。
+        一次可提交单个分量，也可用 <code>mean_vector</code> 提交一个单位的整个均值向量。
+      </div>
+      <div class="stack">
+        <div class="row">
+          <label class="control"><span>单位 ID</span><input type="text" id="f-unit" required placeholder="单位-30"></label>
+          <label class="control"><span>批次</span><input type="text" id="f-batch" required placeholder="批次-甲-01"></label>
+          <label class="control"><span>指标</span><input type="text" id="f-metric" value="指标值"></label>
+          <label class="control"><span>周期</span><input type="text" id="f-period" value="2026-W46"></label>
+        </div>
+        <div class="row">
+          <label class="control"><span>均值</span><input type="number" step="any" id="f-mean" required></label>
+          <label class="control"><span>标准差</span><input type="number" step="any" id="f-std" value="12"></label>
+          <label class="control"><span>有效数量</span><input type="number" step="any" id="f-n" required></label>
+          <label class="control"><span>范围下限</span><input type="number" step="any" id="f-lo" required></label>
+          <label class="control"><span>范围上限</span><input type="number" step="any" id="f-hi" required></label>
+        </div>
+      </div>
+      <div>
+        <h3>或粘贴一批 JSON 摘要（数组）</h3>
+        <textarea id="f-json" placeholder='[{"unit_id":"单位-30","batch_id":"批次-甲-01","period":"2026-W46","n_effective":140,"mean_vector":{"指标值":98.2,"伴随指标":70.4},"std_vector":{"指标值":11.4,"伴随指标":6.1}}]'></textarea>
+      </div>
+      <div class="row">
+        <label class="control" style="flex:1"><span>说明（可选，写入审计记录）</span><input type="text" id="f-note" placeholder="补报 / 更正说明"></label>
+      </div>
+      <div id="intake-result" class="small muted"></div>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" data-close>取消</button>
+      <button type="submit" class="primary" id="intake-submit">提交摘要</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="inject-dialog">
+  <form method="dialog" id="inject-form">
+    <div class="dialog-head">
+      <h2>注入损坏摘要（演示）</h2>
+      <span class="spacer"></span>
+      <button type="button" class="quiet" data-close-inject>关闭</button>
+    </div>
+    <div class="dialog-body stack">
+      <div class="notice warn">
+        注入只用于演示：它<strong>追加</strong>一条新报文并把来源标为“注入”，从不修改或删除原报文。
+        “更正”会让新报文替换该单位原来的贡献（旧报文保留在库中、不再参与估计）；
+        “拆报”会用新批次再报一次，用来看权重上限能否挡住宿主式的重复计入。
+      </div>
+      <div class="row">
+        <label class="control" style="flex:1"><span>单位</span>
+          <select id="j-unit" aria-label="选择要注入的单位"></select>
+        </label>
+        <label class="control"><span>指标</span>
+          <select id="j-metric" aria-label="选择指标"></select>
+        </label>
+        <label class="control"><span>方式</span>
+          <select id="j-mode">
+            <option value="revision">更正（替换原贡献）</option>
+            <option value="split">拆报（新批次再报一次）</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <label class="control"><span>均值</span><input type="number" step="any" id="j-mean" required></label>
+        <label class="control"><span>上报有效数量</span><input type="number" step="any" id="j-n" required min="1"></label>
+        <label class="control"><span>标准差</span><input type="number" step="any" id="j-std" value="1"></label>
+      </div>
+      <div class="row">
+        <button type="button" id="j-preset-shift" class="quiet">快捷：均值上移 3×跨度</button>
+        <button type="button" id="j-preset-inflate" class="quiet">快捷：数量放大 20 倍</button>
+        <span class="spacer"></span>
+        <span class="small muted" id="j-hint"></span>
+      </div>
+      <div id="inject-result" class="small muted"></div>
+    </div>
+    <div class="dialog-foot">
+      <button type="button" data-close-inject>取消</button>
+      <button type="submit" class="primary">追加报文并重算</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="sim-dialog">
+  <div class="dialog-head">
+    <h2>验证模拟参数</h2>
+    <span class="spacer"></span>
+    <button type="button" class="quiet" data-close-sim>关闭</button>
+  </div>
+  <div class="dialog-body stack">
+    <p class="small muted">
+      针对已知真值的虚构面板：单位异质性、独立损坏、协同偏移、虚增数量、超出上限、少量极端值。
+      收益用“误差 p90”衡量；误伤用“干净面板在改变 α / 上限后的中心漂移”衡量。
+    </p>
+    <div class="row">
+      <label class="control"><span>随机种子</span><input type="number" id="s-seed" value="7"></label>
+      <label class="control"><span>轮数</span><input type="number" id="s-runs" value="100" min="10" max="400"></label>
+      <label class="control"><span>α</span><input type="number" id="s-alpha" value="0.12" step="0.01" min="0.01" max="0.45"></label>
+      <label class="control"><span>权重上限</span><input type="number" id="s-cap" value="0.10" step="0.01" min="0.01" max="0.5"></label>
+    </div>
+    <div class="row"><button id="s-run" class="primary">开始</button><span class="small muted" id="s-progress"></span></div>
+  </div>
+</dialog>
+
+<dialog id="trace-dialog">
+  <div class="dialog-head">
+    <h2>追溯参与批次</h2>
+    <span class="spacer"></span>
+    <button type="button" class="quiet" data-close-trace>关闭</button>
+  </div>
+  <div class="dialog-body stack" id="trace-body"></div>
+</dialog>
+
+<script src="/app.js"></script>
+</body>
+</html>
